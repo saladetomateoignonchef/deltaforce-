@@ -11,6 +11,7 @@ import java.net.URL
 /** Sauvegarde des dernières infos lues (JSON + images en petit format). */
 object Store {
     private const val TAILLE_IMAGE = 120
+    const val DECONNECTE = "⚠ Reconnecte-toi"
 
     private fun prefs(c: Context) = c.getSharedPreferences("site_noir", Context.MODE_PRIVATE)
 
@@ -31,11 +32,21 @@ object Store {
             val cartes = obj.optJSONArray(section) ?: continue
             for (i in 0 until cartes.length()) telecharger(c, cartes.getJSONObject(i).optString("image"))
         }
+        val maintenant = System.currentTimeMillis()
         prefs(c).edit()
             .putString("data", json)
-            .putLong("time", System.currentTimeMillis())
+            .putLong("time", maintenant)
             .putString("status", "")
             .commit()
+        Notifs.programmer(c, obj, maintenant)
+    }
+
+    /** Heure de fin d'une production (0 si pas de compte à rebours) = heure du rafraîchissement + temps restant. */
+    fun fin(carte: JSONObject, heureMaj: Long): Long {
+        val timer = carte.optString("timer")
+        if (timer.isEmpty()) return 0
+        val (h, m, s) = timer.split(":").map { it.toLong() }
+        return heureMaj + ((h * 60 + m) * 60 + s) * 1000
     }
 
     private fun fichier(c: Context, url: String) = File(c.filesDir, "img_" + Integer.toHexString(url.hashCode()) + ".png")

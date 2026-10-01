@@ -36,6 +36,7 @@
       carte.classList.forEach(function (c) { if (/^lv\d$/.test(c)) lv = c; });
       var nombres = piedTxt.match(/\d[\d.,\s]*\d|\d/g);
       var info = {
+        id: carte.dataset.workbenchId || '',
         atelier: atelier,
         etat: etat,
         objet: texte(carte, '[data-info="manufacture-card-name"]'),
@@ -74,7 +75,9 @@
       return;
     }
     if (!prodOk && !recoOk) {
-      SiteNoir.erreur('Pas de données : ouvre l’appli pour te connecter');
+      // Des cartes vides mais aucune donnée : la connexion au site a expiré
+      var nb = document.querySelectorAll('[data-info="manufacture-card"]').length;
+      SiteNoir.erreur(nb ? 'deconnecte' : 'introuvable');
       return;
     }
     SiteNoir.resultat(JSON.stringify({ personal: valeurs(memo.personal), recommend: valeurs(memo.recommend) }));

@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/case_"
     android:layout_width="0dp"
     android:layout_height="wrap_content"
     android:layout_margin="2dp"
@@ -61,4 +62,16 @@
         android:singleLine="true"
         android:textColor="#AAB8B8"
         android:textSize="8sp" />
+
+    <!-- Comparaison production / recommandation -->
+    <TextView
+        android:id="@+id/badge"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:ellipsize="end"
+        android:gravity="center"
+        android:singleLine="true"
+        android:textSize="8sp"
+        android:textStyle="bold"
+        android:visibility="gone" />
 </LinearLayout>

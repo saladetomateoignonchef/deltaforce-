@@ -1,6 +1,5 @@
 package com.deltaforce.sitenoir
 
-import android.app.AlarmManager
 import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
@@ -13,13 +12,15 @@ import android.util.Log
 import android.view.View
 import android.widget.RemoteViews
 import org.json.JSONArray
+import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
 /**
  * Le widget d'écran d'accueil. Une liste défilante de 2 lignes :
- * production en cours (avec compte à rebours en direct), puis recommandations.
+ * production en cours (compte à rebours en direct + comparaison avec la recommandation),
+ * puis recommandations (meilleur gain mis en avant).
  */
 class SiteNoirWidget : AppWidgetProvider() {
 
@@ -28,6 +29,7 @@ class SiteNoirWidget : AppWidgetProvider() {
     }
 
     companion object {
+        private const val TAG = "SiteNoir"
         // Couleur de rareté selon la classe lv2…lv6 du site (vert, bleu, violet, or, rouge)
         private val COULEURS = mapOf(
             "lv2" to "#5FC77A", "lv3" to "#4AA3E8", "lv4" to "#A07DE0", "lv5" to "#E08A3C", "lv6" to "#E5534B"
@@ -35,9 +37,9 @@ class SiteNoirWidget : AppWidgetProvider() {
         private val NOMS_COURTS = mapOf(
             "Div. de la cyberguerre" to "Cyberguerre", "Établi d'armure" to "Armure"
         )
+        private val VERT = Color.parseColor("#3DDC84")
+        private val ORANGE = Color.parseColor("#F0A040")
         private val HEURE = SimpleDateFormat("HH:mm", Locale.FRANCE)
-
-        private const val TAG = "SiteNoir"
 
         fun majTous(c: Context) {
             val manager = AppWidgetManager.getInstance(c)
@@ -52,14 +54,13 @@ class SiteNoirWidget : AppWidgetProvider() {
             var statut = Store.statut(c)
 
             // Liste défilante : ligne 0 = production, ligne 1 = recommandations
-            var prochaineFin = Long.MAX_VALUE
             try {
                 val liste = RemoteViews.RemoteCollectionItems.Builder().setHasStableIds(true).setViewTypeCount(2)
                 Store.donnees(c)?.let { d ->
-                    val (ligneProd, fin) = ligne(c, "Production en cours", d.optJSONArray("personal"), true, heureMaj)
-                    prochaineFin = fin
-                    liste.addItem(0, ligneProd)
-                    liste.addItem(1, ligne(c, "Recommandations", d.optJSONArray("recommend"), false, heureMaj).first)
+                    val prod = d.optJSONArray("personal") ?: JSONArray()
+                    val reco = d.optJSONArray("recommend") ?: JSONArray()
+                    liste.addItem(0, ligne(c, "Production en cours", prod, reco, true, heureMaj))
+                    liste.addItem(1, ligne(c, "Recommandations", reco, prod, false, heureMaj))
                 }
                 v.setRemoteAdapter(R.id.liste, liste.build())
                 v.setEmptyView(R.id.liste, R.id.vide)
@@ -78,45 +79,61 @@ class SiteNoirWidget : AppWidgetProvider() {
                     else -> ""
                 }
             )
+            // Connexion expirée : message en orange, et un appui ouvre l'appli pour se reconnecter
+            v.setTextColor(R.id.maj, if (statut == Store.DECONNECTE) ORANGE else Color.parseColor("#99B0B0"))
 
             val flags = PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
             val refresh = Intent(c, RefreshActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             v.setOnClickPendingIntent(R.id.btnRefresh, PendingIntent.getActivity(c, 0, refresh, flags))
-            val appli = Intent(c, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            v.setOnClickPendingIntent(R.id.titre, PendingIntent.getActivity(c, 1, appli, flags))
-
-            runCatching { programmerFin(c, prochaineFin) }.onFailure { Log.e(TAG, "Erreur alarme", it) }
+            val appli = PendingIntent.getActivity(c, 1, Intent(c, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), flags)
+            v.setOnClickPendingIntent(R.id.titre, appli)
+            v.setOnClickPendingIntent(R.id.maj, appli)
             return v
         }
 
-        /** Construit une ligne (titre + 4 cases). Renvoie aussi la prochaine fin de production. */
-        private fun ligne(c: Context, titre: String, cartes: JSONArray?, production: Boolean, heureMaj: Long): Pair<RemoteViews, Long> {
+        private fun norm(s: String) = s.replace(Regex("[’`´]"), "'").replace(Regex("\\s+"), " ").trim().lowercase()
+
+        /** "41,556" → 41556 (le site sépare les milliers par une virgule). */
+        private fun gain(carte: JSONObject) = carte.optString("recompense").filter { it.isDigit() }.toLongOrNull() ?: -1
+
+        /** La carte du même atelier dans l'autre section (production ↔ recommandation). */
+        private fun pendant(carte: JSONObject, autres: JSONArray): JSONObject? {
+            for (i in 0 until autres.length()) {
+                val o = autres.getJSONObject(i)
+                val memeId = carte.optString("id").isNotEmpty() && carte.optString("id") == o.optString("id")
+                if (memeId || carte.optString("atelier") == o.optString("atelier")) return o
+            }
+            return null
+        }
+
+        /** Construit une ligne (titre + une case par atelier). */
+        private fun ligne(c: Context, titre: String, cartes: JSONArray, autres: JSONArray, production: Boolean, heureMaj: Long): RemoteViews {
             val rangee = RemoteViews(c.packageName, R.layout.widget_row)
             rangee.setTextViewText(R.id.titreRangee, titre)
             // La liste réutilise ses lignes : on vide les anciennes cases avant d'ajouter les nouvelles
             rangee.removeAllViews(R.id.cellules)
-            var prochaineFin = Long.MAX_VALUE
-            if (cartes == null) return rangee to prochaineFin
+
+            val meilleurGain = (0 until cartes.length()).maxOfOrNull { gain(cartes.getJSONObject(it)) } ?: -1
 
             for (i in 0 until cartes.length()) {
                 val carte = cartes.getJSONObject(i)
                 val cell = RemoteViews(c.packageName, R.layout.widget_cell)
 
                 val atelier = carte.optString("atelier")
+                val objet = carte.optString("objet")
                 cell.setTextViewText(R.id.atelier, NOMS_COURTS[atelier] ?: atelier)
-                cell.setTextViewText(R.id.objet, carte.optString("objet").ifEmpty { carte.optString("etat").ifEmpty { "—" } })
+                cell.setTextViewText(R.id.objet, objet.ifEmpty { carte.optString("etat").ifEmpty { "—" } })
                 COULEURS[carte.optString("lv")]?.let { cell.setTextColor(R.id.objet, Color.parseColor(it)) }
 
                 val image = Store.image(c, carte.optString("image"))
                 if (image != null) cell.setImageViewBitmap(R.id.image, image)
                 else cell.setViewVisibility(R.id.image, View.INVISIBLE)
 
+                val autre = pendant(carte, autres)
+                val memeObjet = autre != null && objet.isNotEmpty() && norm(objet) == norm(autre.optString("objet"))
+
                 if (production) {
-                    val timer = carte.optString("timer")
-                    val fin = if (timer.isNotEmpty()) {
-                        val (h, m, s) = timer.split(":").map { it.toLong() }
-                        heureMaj + ((h * 60 + m) * 60 + s) * 1000
-                    } else 0L
+                    val fin = Store.fin(carte, heureMaj)
                     val reste = fin - System.currentTimeMillis()
                     if (reste > 0) {
                         // Compte à rebours géré par Android lui-même : il tourne sans l'appli
@@ -125,34 +142,36 @@ class SiteNoirWidget : AppWidgetProvider() {
                         cell.setChronometerCountDown(R.id.chrono, true)
                         cell.setChronometer(R.id.chrono, SystemClock.elapsedRealtime() + reste, null, true)
                         cell.setTextViewText(R.id.sous, "fin " + HEURE.format(Date(fin)))
-                        prochaineFin = minOf(prochaineFin, fin)
                     } else {
                         val termine = fin > 0 || carte.optBoolean("termine")
                         cell.setTextViewText(R.id.valeur, if (termine) "Terminé ✓" else "—")
-                        if (termine) cell.setTextColor(R.id.valeur, Color.parseColor("#3DDC84"))
+                        if (termine) cell.setTextColor(R.id.valeur, VERT)
+                    }
+                    // Comparaison avec la recommandation du même atelier
+                    if (autre != null && autre.optString("objet").isNotEmpty()) {
+                        if (memeObjet) badge(cell, "✓ recommandé", VERT)
+                        else badge(cell, "⚠ reco : " + autre.optString("objet"), ORANGE)
                     }
                 } else {
                     cell.setTextViewText(R.id.valeur, carte.optString("recompense").ifEmpty { "—" })
-                    cell.setTextColor(R.id.valeur, Color.parseColor("#3DDC84"))
+                    cell.setTextColor(R.id.valeur, VERT)
                     cell.setTextViewText(R.id.sous, "récomp./h")
+                    if (meilleurGain > 0 && gain(carte) == meilleurGain) {
+                        cell.setInt(R.id.case_, "setBackgroundResource", R.drawable.cell_bg_best)
+                        badge(cell, "★ meilleur gain", Color.parseColor("#FFD54F"))
+                    } else if (memeObjet) {
+                        badge(cell, "✓ en cours", VERT)
+                    }
                 }
                 rangee.addView(R.id.cellules, cell)
             }
-            return rangee to prochaineFin
+            return rangee
         }
 
-        /** Redessine le widget quand la prochaine production se termine (pour afficher « Terminé ✓ »). */
-        private fun programmerFin(c: Context, fin: Long) {
-            val intent = Intent(c, SiteNoirWidget::class.java)
-                .setAction(AppWidgetManager.ACTION_APPWIDGET_UPDATE)
-                .putExtra(
-                    AppWidgetManager.EXTRA_APPWIDGET_IDS,
-                    AppWidgetManager.getInstance(c).getAppWidgetIds(ComponentName(c, SiteNoirWidget::class.java))
-                )
-            val pi = PendingIntent.getBroadcast(c, 2, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-            val alarmes = c.getSystemService(AlarmManager::class.java)
-            alarmes.cancel(pi)
-            if (fin != Long.MAX_VALUE) alarmes.set(AlarmManager.RTC, fin + 1000, pi)
+        private fun badge(cell: RemoteViews, texte: String, couleur: Int) {
+            cell.setViewVisibility(R.id.badge, View.VISIBLE)
+            cell.setTextViewText(R.id.badge, texte)
+            cell.setTextColor(R.id.badge, couleur)
         }
     }
 }

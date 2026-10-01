@@ -70,15 +70,28 @@ class RefreshActivity : Activity() {
         // Le téléchargement des images se fait hors du thread principal
         Thread {
             try {
-                if (json != null) Store.enregistrer(app, json) else Store.statut(app, erreur ?: "Erreur")
+                if (json != null) Store.enregistrer(app, json) else Store.statut(app, statutErreur(erreur))
             } catch (e: Exception) {
                 Log.e("SiteNoir", "Erreur enregistrement", e)
                 Store.statut(app, "Erreur : " + e.javaClass.simpleName)
             }
             SiteNoirWidget.majTous(app)
         }.start()
-        if (erreur != null) Toast.makeText(app, erreur, Toast.LENGTH_LONG).show()
+        if (erreur != null) Toast.makeText(app, messageErreur(erreur), Toast.LENGTH_LONG).show()
         finish()
+    }
+
+    // Codes envoyés par extract.js → texte court pour le widget / message détaillé pour le toast
+    private fun statutErreur(code: String?) = when (code) {
+        "deconnecte" -> Store.DECONNECTE
+        "introuvable" -> "Site introuvable"
+        else -> code ?: "Erreur"
+    }
+
+    private fun messageErreur(code: String) = when (code) {
+        "deconnecte" -> "Connexion expirée : appuie sur le widget pour te reconnecter"
+        "introuvable" -> "Atelier du Site noir introuvable sur la page"
+        else -> code
     }
 
     override fun onDestroy() {
