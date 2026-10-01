@@ -20,7 +20,7 @@
     <ImageView
         android:id="@+id/image"
         android:layout_width="match_parent"
-        android:layout_height="30dp"
+        android:layout_height="24dp"
         android:importantForAccessibility="no"
         android:scaleType="fitCenter" />
 
@@ -33,6 +33,17 @@
         android:maxLines="2"
         android:textColor="#D8E0E0"
         android:textSize="9sp" />
+
+    <Chronometer
+        android:id="@+id/chrono"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:countDown="true"
+        android:singleLine="true"
+        android:textColor="#FFFFFF"
+        android:textSize="12sp"
+        android:textStyle="bold"
+        android:visibility="gone" />
 
     <TextView
         android:id="@+id/valeur"
