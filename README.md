@@ -15,3 +15,6 @@ de https://www.playdeltaforce.com/events/hq/fr/index.html, avec un bouton **Rafr
 ## Boutons
 - **⟳ Rafraîchir** : recharge les infos.
 - **Site** : affiche le site complet (pour se reconnecter) ; **Widget** pour revenir.
+
+## Vrai widget Android
+Voir le dossier [`android-widget`](android-widget/README.md) (projet Android Studio).

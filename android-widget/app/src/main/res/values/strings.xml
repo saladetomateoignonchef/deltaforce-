@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Site noir</string>
+    <string name="widget_desc">Production en cours et recommandations du Site noir (Delta Force)</string>
+    <string name="maj_widget">Mettre à jour le widget</string>
+    <string name="rafraichir">Rafraîchir</string>
+</resources>
