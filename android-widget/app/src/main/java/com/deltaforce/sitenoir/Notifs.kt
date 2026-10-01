@@ -14,7 +14,9 @@ import org.json.JSONObject
 
 /** Notifications de fin de fabrication : une alarme par atelier, programmée à chaque rafraîchissement. */
 object Notifs {
-    private const val CANAL = "fin_fabrication"
+    // Un canal ne peut plus être modifié une fois créé : nouveau nom pour le mode « pop-up silencieux »
+    private const val CANAL = "fin_fabrication_popup"
+    private const val ANCIEN_CANAL = "fin_fabrication"
     private const val MAX_ATELIERS = 10
     const val ACTION_FIN = "com.deltaforce.sitenoir.FIN"
 
@@ -50,7 +52,14 @@ object Notifs {
         ) return
 
         val nm = c.getSystemService(NotificationManager::class.java)
-        nm.createNotificationChannel(NotificationChannel(CANAL, "Fin de fabrication", NotificationManager.IMPORTANCE_DEFAULT))
+        nm.deleteNotificationChannel(ANCIEN_CANAL)
+        // Importance haute = la notification s'affiche en pop-up en haut de l'écran,
+        // mais sans son ni vibration
+        val canal = NotificationChannel(CANAL, "Fin de fabrication", NotificationManager.IMPORTANCE_HIGH).apply {
+            setSound(null, null)
+            enableVibration(false)
+        }
+        nm.createNotificationChannel(canal)
 
         val ouvrir = PendingIntent.getActivity(
             c, 0, Intent(c, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
