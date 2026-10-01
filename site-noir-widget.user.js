@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Delta Force - Widget Site noir
 // @namespace    deltaforce-site-noir
-// @version      3.0
+// @version      3.1
 // @description  Affiche l'Atelier du Site noir (production en cours + recommandations) dans un widget compact avec un bouton Rafraîchir.
 // @match        https://www.playdeltaforce.com/events/hq/*
 // @run-at       document-idle
@@ -116,7 +116,8 @@
       else if (visible(carte.querySelector('[data-info="manufacture-card-empty"]'))) etat = 'Rien en cours';
       const lv = [...carte.classList].find((c) => /^lv\d$/.test(c));
       // La clé (id de l'établi) évite les doublons entre la version PC et la version mobile
-      section.set(carte.dataset.workbenchId || atelier, {
+      const cle = carte.dataset.workbenchId || atelier;
+      const info = {
         atelier,
         etat,
         objet: texte(carte, '[data-info="manufacture-card-name"]'),
@@ -124,9 +125,16 @@
         couleur: COULEURS[lv] || '',
         pied: pied ? norm(pied.textContent) : '',
         termine: !!pied && pied.classList.contains('collected'),
-      });
+      };
+      // Le site affiche d'abord des cartes vides en attendant les données :
+      // on ne remplace jamais une carte remplie par une carte vide
+      const ancienne = section.get(cle);
+      if (!ancienne || !remplie(ancienne) || remplie(info)) section.set(cle, info);
     }
   }
+
+  const remplie = (c) => !!c.objet || RE_TIMER.test(c.pied);
+  const sectionRemplie = (m) => [...m.values()].some(remplie);
 
   function cliquerOnglet(nom) {
     const onglet = document.querySelector(`[data-action="m-manufacture-tab"][data-tab="${nom}"]`);
@@ -187,28 +195,29 @@
   }
 
   // ---------- Déroulement ----------
-  // 1. on attend les cartes "production" ; 2. on clique sur l'onglet Recommandations ;
-  // 3. on attend les cartes "recommandations" ; 4. on affiche tout et on remet l'onglet d'origine.
+  // 1. on attend que les cartes "production" soient remplies ; 2. on clique sur l'onglet
+  // Recommandations ; 3. on attend qu'elles soient remplies ; 4. on affiche et on remet l'onglet.
   const debut = Date.now();
   let dernierClic = 0;
   (function attendre() {
     lireCartes();
-    const prod = memo.personal.size;
-    const reco = memo.recommend.size;
+    const prodOk = sectionRemplie(memo.personal);
+    const recoOk = sectionRemplie(memo.recommend);
     const ecoule = Date.now() - debut;
 
-    if (prod && !reco && Date.now() - dernierClic > 3000) {
+    // Après 10 s sans production remplie (ateliers vraiment vides ?), on passe quand même aux recommandations
+    if ((prodOk || ecoule > 10000) && !recoOk && Date.now() - dernierClic > 3000) {
       dernierClic = Date.now();
       cliquerOnglet('recommend');
     }
-    if (!(prod && reco) && ecoule < DELAI_MAX_MS) {
+    if (!(prodOk && recoOk) && ecoule < DELAI_MAX_MS) {
       setTimeout(attendre, 400); // les données arrivent après le chargement de la page
       return;
     }
     if (dernierClic) cliquerOnglet('personal');
 
     contenu.innerHTML = '';
-    if (!prod && !reco) {
+    if (!memo.personal.size && !memo.recommend.size) {
       statut.textContent = 'Introuvable : connecte-toi (bouton Site)';
       widget.querySelector('#sn-diag').style.display = 'block';
       return;
@@ -216,6 +225,9 @@
     section('Production en cours', memo.personal, 'personal');
     section('Recommandations de production', memo.recommend, 'recommend');
     statut.textContent = 'Mis à jour à ' + heure(new Date());
-    if (!prod || !reco) widget.querySelector('#sn-diag').style.display = 'block';
+    if (!prodOk || !recoOk) {
+      statut.textContent = 'Données incomplètes';
+      widget.querySelector('#sn-diag').style.display = 'block';
+    }
   })();
 })();
