@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Delta Force - Widget Site noir
 // @namespace    deltaforce-site-noir
-// @version      2.0
+// @version      3.0
 // @description  Affiche l'Atelier du Site noir (production en cours + recommandations) dans un widget compact avec un bouton Rafraîchir.
 // @match        https://www.playdeltaforce.com/events/hq/*
 // @run-at       document-idle
@@ -16,11 +16,10 @@
   // Le mode widget ne s'active que si l'URL contient "widget" (ex : index.html?widget).
   if (!/[?&#]widget\b/.test(location.href)) return;
 
-  // Ordre important : "Établi d'armure" doit être testé avant "Établi"
-  const ATELIERS = ["Div. de la cyberguerre", "Établi d'armure", 'Établi', 'Pharmacie'];
   const RE_TIMER = /(?<!\d)\d{1,2}:\d{2}:\d{2}(?!\d)/;
-  const RE_RECOMP = /Récompenses\s*\/\s*h/i;
-  const DELAI_MAX_MS = 30000;
+  const DELAI_MAX_MS = 20000;
+  // Couleur de rareté selon la classe lv2…lv6 de la carte (vert, bleu, violet, or, rouge)
+  const COULEURS = { lv2: '#5fc77a', lv3: '#4aa3e8', lv4: '#a07de0', lv5: '#e08a3c', lv6: '#e5534b' };
 
   const norm = (s) => (s || '').replace(/[’`´]/g, "'").replace(/\s+/g, ' ').trim();
   const heure = (d) => d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
@@ -87,96 +86,51 @@
   });
   // En cas de souci : copie le HTML du bloc pour me l'envoyer
   widget.querySelector('#sn-diag').addEventListener('click', () => {
-    const bloc = trouverBloc();
-    const html = bloc ? bloc.outerHTML : document.body.innerText;
+    const blocs = [...document.querySelectorAll('[data-info="manufacture-root"]')];
+    const html = blocs.length ? blocs.map((b) => b.outerHTML).join('\n\n') : document.body.innerText;
     navigator.clipboard.writeText(html.slice(0, 30000)).then(
       () => alert('Diagnostic copié ! Colle-le dans la conversation avec Claude.'),
-      () => alert("Impossible de copier automatiquement.")
+      () => alert('Impossible de copier automatiquement.')
     );
   });
 
-  // ---------- Lecture des infos dans la page ----------
-  // On lit textContent : il contient aussi le texte des parties cachées (onglets, carrousel…)
-  function trouverBloc() {
-    let meilleur = null;
-    for (const el of document.body.querySelectorAll('*')) {
-      if (widget.contains(el)) continue;
-      const t = el.textContent;
-      if (!t.includes('Atelier du Site noir') && !t.includes('Détails de la production')) continue;
-      if (!RE_TIMER.test(t) && !RE_RECOMP.test(t)) continue;
-      if (!meilleur || t.length < meilleur.textContent.length) meilleur = el;
+  // ---------- Lecture des cartes ----------
+  // Sur mobile, le site n'a qu'une liste de cartes qu'il remplace quand on change d'onglet
+  // (data-section="personal" ou "recommend"). On mémorise donc chaque section dès qu'on la voit.
+  const memo = { personal: new Map(), recommend: new Map() };
+
+  const texte = (carte, sel) => norm((carte.querySelector(sel) || {}).textContent);
+  const visible = (el) => !!el && getComputedStyle(el).display !== 'none';
+
+  function lireCartes() {
+    for (const carte of document.querySelectorAll('[data-info="manufacture-card"]')) {
+      const section = memo[carte.dataset.section];
+      if (!section) continue;
+      const atelier = texte(carte, '.typename');
+      const img = carte.querySelector('[data-info="manufacture-card-image"]');
+      const imgWrap = carte.querySelector('[data-info="manufacture-card-image-wrap"]');
+      const pied = carte.querySelector('[data-info="manufacture-card-footer"]');
+      let etat = '';
+      if (visible(carte.querySelector('[data-info="manufacture-card-locked"]'))) etat = 'Verrouillé';
+      else if (visible(carte.querySelector('[data-info="manufacture-card-upgrade"]'))) etat = 'En amélioration';
+      else if (visible(carte.querySelector('[data-info="manufacture-card-empty"]'))) etat = 'Rien en cours';
+      const lv = [...carte.classList].find((c) => /^lv\d$/.test(c));
+      // La clé (id de l'établi) évite les doublons entre la version PC et la version mobile
+      section.set(carte.dataset.workbenchId || atelier, {
+        atelier,
+        etat,
+        objet: texte(carte, '[data-info="manufacture-card-name"]'),
+        image: img && (!imgWrap || visible(imgWrap)) ? img.currentSrc || img.src : '',
+        couleur: COULEURS[lv] || '',
+        pied: pied ? norm(pied.textContent) : '',
+        termine: !!pied && pied.classList.contains('collected'),
+      });
     }
-    return meilleur;
   }
 
-  // Étiquettes d'atelier = éléments dont le texte est exactement un nom d'atelier
-  function etiquettes(racine) {
-    const res = [];
-    for (const el of racine.querySelectorAll('*')) {
-      const t = norm(el.textContent);
-      const nom = ATELIERS.find((a) => t === a);
-      if (nom && ![...el.children].some((c) => norm(c.textContent) === t)) res.push({ el, nom });
-    }
-    return res;
-  }
-
-  function lireCarte(carte, nom) {
-    const texte = norm(carte.textContent);
-    const timer = (texte.match(RE_TIMER) || [])[0];
-    const recomp = RE_RECOMP.test(texte)
-      ? (texte.split(RE_RECOMP)[1] || '').match(/[\d][\d.,\s]*/)
-      : null;
-
-    // Nom de l'objet : les bouts de texte qui ne sont ni l'atelier, ni le temps, ni la récompense
-    let objet = '', couleur = '';
-    for (const el of carte.querySelectorAll('*')) {
-      if (el.children.length) continue;
-      const t = norm(el.textContent);
-      if (!t || t === nom || RE_TIMER.test(t) || RE_RECOMP.test(t) || /^[\d.,\s]+$/.test(t)) continue;
-      if (t.length > objet.length) { objet = t; couleur = getComputedStyle(el).color; }
-    }
-
-    // Image : la plus grande de la carte (l'objet), sinon une image de fond
-    let image = '';
-    let taille = 0;
-    for (const img of carte.querySelectorAll('img')) {
-      const s = (img.naturalWidth || img.width || 1) * (img.naturalHeight || img.height || 1);
-      if (img.currentSrc || img.src) if (s > taille) { taille = s; image = img.currentSrc || img.src; }
-    }
-    if (!image) {
-      for (const el of carte.querySelectorAll('*')) {
-        const m = getComputedStyle(el).backgroundImage.match(/url\(["']?(.+?)["']?\)/);
-        if (m) { image = m[1]; }
-      }
-    }
-    return {
-      nom, objet, couleur, image,
-      type: timer ? 'prod' : recomp ? 'reco' : null,
-      valeur: timer || (recomp ? recomp[0].trim() : ''),
-    };
-  }
-
-  function extraire() {
-    const bloc = trouverBloc();
-    if (!bloc) return null;
-    const vus = new Set();
-    const cartes = [];
-    for (const { el, nom } of etiquettes(bloc)) {
-      // On remonte jusqu'à l'élément qui contient aussi le temps ou la récompense
-      let carte = el;
-      while (carte !== bloc && !RE_TIMER.test(carte.textContent) && !RE_RECOMP.test(carte.textContent)) {
-        carte = carte.parentElement;
-      }
-      if (carte === bloc) continue;
-      // Si la "carte" contient plusieurs ateliers, ce n'est pas une carte : on ignore
-      if (etiquettes(carte).length > 1) continue;
-      const info = lireCarte(carte, nom);
-      const cle = info.type + '|' + nom;
-      if (!info.type || vus.has(cle)) continue; // supprime les doublons (version PC + mobile)
-      vus.add(cle);
-      cartes.push(info);
-    }
-    return { bloc, cartes };
+  function cliquerOnglet(nom) {
+    const onglet = document.querySelector(`[data-action="m-manufacture-tab"][data-tab="${nom}"]`);
+    if (onglet) onglet.click();
   }
 
   // ---------- Affichage ----------
@@ -185,7 +139,7 @@
     return heure(new Date(Date.now() + ((h * 60 + m) * 60 + s) * 1000));
   }
 
-  function carteHTML(c) {
+  function carteHTML(c, type) {
     const div = document.createElement('div');
     div.className = 'sn-carte';
     div.innerHTML = `
@@ -193,77 +147,75 @@
       ${c.image ? '<img alt="">' : ''}
       <div class="sn-objet"></div>
       <div class="sn-valeur"></div>
-      ${c.type === 'prod' ? '<div class="sn-fin"></div>' : ''}`;
-    div.querySelector('.sn-atelier').textContent = c.nom;
+      <div class="sn-fin"></div>`;
+    div.querySelector('.sn-atelier').textContent = c.atelier;
     if (c.image) div.querySelector('img').src = c.image;
     const objet = div.querySelector('.sn-objet');
-    objet.textContent = c.objet || '—';
+    objet.textContent = c.objet || c.etat || '—';
     if (c.couleur) objet.style.color = c.couleur;
+
     const valeur = div.querySelector('.sn-valeur');
-    if (c.type === 'prod') {
-      valeur.textContent = c.valeur;
-      div.querySelector('.sn-fin').textContent = 'fini vers ' + fin(c.valeur);
+    const sous = div.querySelector('.sn-fin');
+    if (type === 'personal') {
+      const timer = (c.pied.match(RE_TIMER) || [])[0];
+      if (timer) {
+        valeur.textContent = timer;
+        sous.textContent = 'fini vers ' + fin(timer);
+      } else {
+        valeur.textContent = c.termine ? 'Terminé ✓' : c.pied || c.etat || '—';
+      }
     } else {
-      valeur.innerHTML = '<span class="sn-recomp"></span><div class="sn-fin">récompenses/h</div>';
-      valeur.querySelector('.sn-recomp').textContent = c.valeur;
+      // Le pied contient "Récompenses/h" puis le nombre : on garde le dernier nombre
+      const nombres = c.pied.match(/\d[\d.,\s]*\d|\d/g);
+      valeur.className += ' sn-recomp';
+      valeur.textContent = nombres ? nombres[nombres.length - 1].trim() : c.pied || '—';
+      sous.textContent = 'récompenses/h';
     }
     return div;
   }
 
-  function section(titre, cartes) {
+  function section(titre, cartes, type) {
     const h = document.createElement('div');
     h.className = 'sn-titre';
     h.textContent = titre;
     contenu.appendChild(h);
     const grille = document.createElement('div');
-    grille.className = cartes.length ? 'sn-grille' : 'sn-vide';
-    if (cartes.length) {
-      const ordre = (c) => ["Div. de la cyberguerre", 'Établi', 'Pharmacie', "Établi d'armure"].indexOf(c.nom);
-      cartes.sort((a, b) => ordre(a) - ordre(b)).forEach((c) => grille.appendChild(carteHTML(c)));
-    } else {
-      grille.textContent = 'Aucune donnée trouvée.';
-    }
+    grille.className = cartes.size ? 'sn-grille' : 'sn-vide';
+    if (cartes.size) cartes.forEach((c) => grille.appendChild(carteHTML(c, type)));
+    else grille.textContent = 'Aucune donnée trouvée.';
     contenu.appendChild(grille);
   }
 
-  // Si les recommandations sont dans un onglet pas encore chargé, on clique dessus
-  let ongletClique = false;
-  function cliquerOngletReco() {
-    if (ongletClique) return;
-    ongletClique = true;
-    for (const el of document.body.querySelectorAll('*')) {
-      if (widget.contains(el)) continue;
-      if (norm(el.textContent) === 'Recommandations de production' && !el.children.length) {
-        el.click();
-        return;
-      }
-    }
-  }
-
+  // ---------- Déroulement ----------
+  // 1. on attend les cartes "production" ; 2. on clique sur l'onglet Recommandations ;
+  // 3. on attend les cartes "recommandations" ; 4. on affiche tout et on remet l'onglet d'origine.
   const debut = Date.now();
+  let dernierClic = 0;
   (function attendre() {
-    const r = extraire();
-    const prod = r ? r.cartes.filter((c) => c.type === 'prod') : [];
-    const reco = r ? r.cartes.filter((c) => c.type === 'reco') : [];
+    lireCartes();
+    const prod = memo.personal.size;
+    const reco = memo.recommend.size;
     const ecoule = Date.now() - debut;
 
-    if (prod.length && !reco.length && ecoule > 3000) cliquerOngletReco();
-
-    const complet = prod.length >= 4 && reco.length >= 4;
-    if (!complet && ecoule < DELAI_MAX_MS && !(ecoule > 10000 && prod.length && reco.length)) {
-      setTimeout(attendre, 500); // les données arrivent après le chargement de la page
+    if (prod && !reco && Date.now() - dernierClic > 3000) {
+      dernierClic = Date.now();
+      cliquerOnglet('recommend');
+    }
+    if (!(prod && reco) && ecoule < DELAI_MAX_MS) {
+      setTimeout(attendre, 400); // les données arrivent après le chargement de la page
       return;
     }
+    if (dernierClic) cliquerOnglet('personal');
 
     contenu.innerHTML = '';
-    if (!r || (!prod.length && !reco.length)) {
+    if (!prod && !reco) {
       statut.textContent = 'Introuvable : connecte-toi (bouton Site)';
       widget.querySelector('#sn-diag').style.display = 'block';
       return;
     }
-    section('Production en cours', prod);
-    section('Recommandations de production', reco);
+    section('Production en cours', memo.personal, 'personal');
+    section('Recommandations de production', memo.recommend, 'recommend');
     statut.textContent = 'Mis à jour à ' + heure(new Date());
-    if (!prod.length || !reco.length) widget.querySelector('#sn-diag').style.display = 'block';
+    if (!prod || !reco) widget.querySelector('#sn-diag').style.display = 'block';
   })();
 })();
