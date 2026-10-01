@@ -93,6 +93,8 @@ class SiteNoirWidget : AppWidgetProvider() {
         private fun ligne(c: Context, titre: String, cartes: JSONArray?, production: Boolean, heureMaj: Long): Pair<RemoteViews, Long> {
             val rangee = RemoteViews(c.packageName, R.layout.widget_row)
             rangee.setTextViewText(R.id.titreRangee, titre)
+            // La liste réutilise ses lignes : on vide les anciennes cases avant d'ajouter les nouvelles
+            rangee.removeAllViews(R.id.cellules)
             var prochaineFin = Long.MAX_VALUE
             if (cartes == null) return rangee to prochaineFin
 

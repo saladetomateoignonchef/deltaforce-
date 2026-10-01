@@ -6,6 +6,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -23,6 +24,9 @@ class RefreshActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Fenêtre totalement transparente qui laisse passer les doigts vers l'écran d'accueil
+        window.addFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)
+        window.attributes = window.attributes.apply { alpha = 0f }
         Toast.makeText(this, "Site noir : rafraîchissement…", Toast.LENGTH_SHORT).show()
         Store.statut(this, "Chargement…")
         SiteNoirWidget.majTous(this)
@@ -78,6 +82,12 @@ class RefreshActivity : Activity() {
     }
 
     override fun onDestroy() {
+        // Fermée avant la fin (par Android) : on ne laisse pas le widget bloqué sur « Chargement… »
+        if (!fini) {
+            fini = true
+            Store.statut(applicationContext, "Interrompu, réessaie ⟳")
+            SiteNoirWidget.majTous(applicationContext)
+        }
         handler.removeCallbacksAndMessages(null)
         web.destroy()
         super.onDestroy()
