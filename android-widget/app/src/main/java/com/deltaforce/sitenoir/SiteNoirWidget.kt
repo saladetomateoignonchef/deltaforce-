@@ -9,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.os.SystemClock
+import android.util.Log
 import android.view.View
 import android.widget.RemoteViews
 import org.json.JSONArray
@@ -36,6 +37,8 @@ class SiteNoirWidget : AppWidgetProvider() {
         )
         private val HEURE = SimpleDateFormat("HH:mm", Locale.FRANCE)
 
+        private const val TAG = "SiteNoir"
+
         fun majTous(c: Context) {
             val manager = AppWidgetManager.getInstance(c)
             val ids = manager.getAppWidgetIds(ComponentName(c, SiteNoirWidget::class.java))
@@ -44,8 +47,29 @@ class SiteNoirWidget : AppWidgetProvider() {
 
         fun construire(c: Context): RemoteViews {
             val v = RemoteViews(c.packageName, R.layout.widget_site_noir)
+            v.setTextViewText(R.id.titre, c.getString(R.string.app_name) + " · v" + BuildConfig.VERSION_NAME)
             val heureMaj = Store.heureMaj(c)
-            val statut = Store.statut(c)
+            var statut = Store.statut(c)
+
+            // Liste défilante : ligne 0 = production, ligne 1 = recommandations
+            var prochaineFin = Long.MAX_VALUE
+            try {
+                val liste = RemoteViews.RemoteCollectionItems.Builder().setHasStableIds(true).setViewTypeCount(2)
+                Store.donnees(c)?.let { d ->
+                    val (ligneProd, fin) = ligne(c, "Production en cours", d.optJSONArray("personal"), true, heureMaj)
+                    prochaineFin = fin
+                    liste.addItem(0, ligneProd)
+                    liste.addItem(1, ligne(c, "Recommandations", d.optJSONArray("recommend"), false, heureMaj).first)
+                }
+                v.setRemoteAdapter(R.id.liste, liste.build())
+                v.setEmptyView(R.id.liste, R.id.vide)
+            } catch (e: Exception) {
+                // Plutôt que de rester bloqué, on affiche l'erreur dans le widget
+                Log.e(TAG, "Erreur construction widget", e)
+                statut = "Erreur : " + e.javaClass.simpleName
+                v.setTextViewText(R.id.vide, (e.message ?: e.toString()).take(200))
+            }
+
             v.setTextViewText(
                 R.id.maj,
                 when {
@@ -55,25 +79,13 @@ class SiteNoirWidget : AppWidgetProvider() {
                 }
             )
 
-            // Liste défilante : ligne 0 = production, ligne 1 = recommandations
-            val liste = RemoteViews.RemoteCollectionItems.Builder().setHasStableIds(true).setViewTypeCount(2)
-            var prochaineFin = Long.MAX_VALUE
-            Store.donnees(c)?.let { d ->
-                val (ligneProd, fin) = ligne(c, "Production en cours", d.optJSONArray("personal"), true, heureMaj)
-                prochaineFin = fin
-                liste.addItem(0, ligneProd)
-                liste.addItem(1, ligne(c, "Recommandations", d.optJSONArray("recommend"), false, heureMaj).first)
-            }
-            v.setRemoteAdapter(R.id.liste, liste.build())
-            v.setEmptyView(R.id.liste, R.id.vide)
-
             val flags = PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
             val refresh = Intent(c, RefreshActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             v.setOnClickPendingIntent(R.id.btnRefresh, PendingIntent.getActivity(c, 0, refresh, flags))
             val appli = Intent(c, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             v.setOnClickPendingIntent(R.id.titre, PendingIntent.getActivity(c, 1, appli, flags))
 
-            programmerFin(c, prochaineFin)
+            runCatching { programmerFin(c, prochaineFin) }.onFailure { Log.e(TAG, "Erreur alarme", it) }
             return v
         }
 

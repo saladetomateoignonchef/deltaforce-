@@ -4,6 +4,7 @@ import android.app.Activity
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import android.view.ViewGroup
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
@@ -64,7 +65,12 @@ class RefreshActivity : Activity() {
         val app = applicationContext
         // Le téléchargement des images se fait hors du thread principal
         Thread {
-            if (json != null) Store.enregistrer(app, json) else Store.statut(app, erreur ?: "Erreur")
+            try {
+                if (json != null) Store.enregistrer(app, json) else Store.statut(app, erreur ?: "Erreur")
+            } catch (e: Exception) {
+                Log.e("SiteNoir", "Erreur enregistrement", e)
+                Store.statut(app, "Erreur : " + e.javaClass.simpleName)
+            }
             SiteNoirWidget.majTous(app)
         }.start()
         if (erreur != null) Toast.makeText(app, erreur, Toast.LENGTH_LONG).show()
