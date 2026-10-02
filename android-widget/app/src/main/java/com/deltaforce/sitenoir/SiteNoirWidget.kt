@@ -154,8 +154,9 @@ class SiteNoirWidget : AppWidgetProvider() {
                     }
                     // Comparaison avec la recommandation du même atelier
                     if (autre != null && autre.optString("objet").isNotEmpty()) {
-                        if (memeObjet) badge(cell, "✓ c'est la reco", VERT)
-                        else badge(cell, "⚠ reco : " + autre.optString("objet"), ORANGE)
+                        // ✓ = tu fabriques l'objet recommandé, ✗ = ce n'est pas la recommandation
+                        if (memeObjet) badge(cell, "✓ en cours", VERT)
+                        else badge(cell, "✗ en cours", Color.parseColor("#E5534B"))
                     }
                 } else {
                     cell.setTextViewText(R.id.valeur, carte.optString("recompense").ifEmpty { "—" })
