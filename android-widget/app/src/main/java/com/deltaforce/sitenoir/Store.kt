@@ -23,6 +23,13 @@ object Store {
 
     fun statut(c: Context): String = prefs(c).getString("status", "") ?: ""
 
+    /** Onglet affiché dans le widget : 0 = production, 1 = recommandations. */
+    fun page(c: Context): Int = prefs(c).getInt("page", 0)
+
+    fun page(c: Context, p: Int) {
+        prefs(c).edit().putInt("page", p).commit()
+    }
+
     fun statut(c: Context, s: String) {
         prefs(c).edit().putString("status", s).commit()
     }

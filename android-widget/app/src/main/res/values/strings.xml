@@ -5,4 +5,6 @@
     <string name="maj_widget">Mettre à jour le widget</string>
     <string name="rafraichir">Rafraîchir</string>
     <string name="vide">Appuie sur ⟳ pour charger les infos</string>
+    <string name="onglet_prod">Production</string>
+    <string name="onglet_reco">Recommandations</string>
 </resources>

@@ -28,8 +28,19 @@ class SiteNoirWidget : AppWidgetProvider() {
         manager.updateAppWidget(ids, construire(context))
     }
 
+    override fun onReceive(context: Context, intent: Intent) {
+        // Appui sur un onglet : on mémorise la page choisie et on redessine
+        if (intent.action == ACTION_PAGE) {
+            Store.page(context, intent.getIntExtra("page", 0))
+            majTous(context)
+        } else {
+            super.onReceive(context, intent)
+        }
+    }
+
     companion object {
         private const val TAG = "SiteNoir"
+        private const val ACTION_PAGE = "com.deltaforce.sitenoir.PAGE"
         // Couleur de rareté selon la classe lv2…lv6 du site (vert, bleu, violet, or, rouge)
         private val COULEURS = mapOf(
             "lv2" to "#5FC77A", "lv3" to "#4AA3E8", "lv4" to "#A07DE0", "lv5" to "#E08A3C", "lv6" to "#E5534B"
@@ -53,14 +64,21 @@ class SiteNoirWidget : AppWidgetProvider() {
             val heureMaj = Store.heureMaj(c)
             var statut = Store.statut(c)
 
-            // Liste défilante : ligne 0 = production, ligne 1 = recommandations
+            // Onglets : la page choisie passe en premier dans la liste (l'autre reste accessible en défilant)
+            val page = Store.page(c)
+            onglet(c, v, R.id.ongletProd, 0, page == 0)
+            onglet(c, v, R.id.ongletReco, 1, page == 1)
+
             try {
                 val liste = RemoteViews.RemoteCollectionItems.Builder().setHasStableIds(true).setViewTypeCount(2)
                 Store.donnees(c)?.let { d ->
                     val prod = d.optJSONArray("personal") ?: JSONArray()
                     val reco = d.optJSONArray("recommend") ?: JSONArray()
-                    liste.addItem(0, ligne(c, "Production en cours", prod, reco, true, heureMaj))
-                    liste.addItem(1, ligne(c, "Recommandations", reco, prod, false, heureMaj))
+                    val lignes = listOf(
+                        0L to ligne(c, "Production en cours", prod, reco, true, heureMaj),
+                        1L to ligne(c, "Recommandations", reco, prod, false, heureMaj)
+                    )
+                    (if (page == 1) lignes.reversed() else lignes).forEach { (id, vue) -> liste.addItem(id, vue) }
                 }
                 v.setRemoteAdapter(R.id.liste, liste.build())
                 v.setEmptyView(R.id.liste, R.id.vide)
@@ -89,6 +107,15 @@ class SiteNoirWidget : AppWidgetProvider() {
             v.setOnClickPendingIntent(R.id.titre, appli)
             v.setOnClickPendingIntent(R.id.maj, appli)
             return v
+        }
+
+        private fun onglet(c: Context, v: RemoteViews, id: Int, page: Int, actif: Boolean) {
+            v.setInt(id, "setBackgroundResource", if (actif) R.drawable.tab_on else R.drawable.tab_off)
+            v.setTextColor(id, if (actif) Color.WHITE else Color.parseColor("#99B0B0"))
+            val intent = Intent(c, SiteNoirWidget::class.java).setAction(ACTION_PAGE).putExtra("page", page)
+            v.setOnClickPendingIntent(
+                id, PendingIntent.getBroadcast(c, 10 + page, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+            )
         }
 
         private fun norm(s: String) = s.replace(Regex("[’`´]"), "'").replace(Regex("\\s+"), " ").trim().lowercase()
