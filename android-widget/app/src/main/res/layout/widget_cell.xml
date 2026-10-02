@@ -36,17 +36,6 @@
         android:textColor="#D8E0E0"
         android:textSize="8.5sp" />
 
-    <Chronometer
-        android:id="@+id/chrono"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:countDown="true"
-        android:singleLine="true"
-        android:textColor="#FFFFFF"
-        android:textSize="12sp"
-        android:textStyle="bold"
-        android:visibility="gone" />
-
     <TextView
         android:id="@+id/valeur"
         android:layout_width="wrap_content"
