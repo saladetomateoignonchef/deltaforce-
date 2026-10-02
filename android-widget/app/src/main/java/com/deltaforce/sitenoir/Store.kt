@@ -3,6 +3,7 @@ package com.deltaforce.sitenoir
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.util.Log
 import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
@@ -59,6 +60,9 @@ object Store {
             val cnx = URL(url).openConnection() as HttpURLConnection
             cnx.connectTimeout = 10_000
             cnx.readTimeout = 10_000
+            // Le serveur d'images peut refuser les requêtes qui ne viennent pas du site
+            cnx.setRequestProperty("Referer", Web.URL)
+            cnx.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 16) AppleWebKit/537.36 Chrome/130 Mobile Safari/537.36")
             val bmp = cnx.inputStream.use { BitmapFactory.decodeStream(it) } ?: return
             // Petites images : un widget a une limite de mémoire
             val echelle = TAILLE_IMAGE.toFloat() / maxOf(bmp.width, bmp.height)
@@ -66,7 +70,7 @@ object Store {
                 Bitmap.createScaledBitmap(bmp, (bmp.width * echelle).toInt().coerceAtLeast(1), (bmp.height * echelle).toInt().coerceAtLeast(1), true)
             else bmp
             f.outputStream().use { petite.compress(Bitmap.CompressFormat.PNG, 100, it) }
-        }
+        }.onFailure { Log.e("SiteNoir", "Image non téléchargée : $url", it) }
     }
 
     fun image(c: Context, url: String): Bitmap? {

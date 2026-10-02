@@ -14,6 +14,16 @@
   function texte(carte, sel) { var el = carte.querySelector(sel); return el ? norm(el.textContent) : ''; }
   function visible(el) { return !!el && getComputedStyle(el).display !== 'none'; }
   function valeurs(m) { return Array.from(m.values()); }
+  // L'adresse de l'image peut être dans src, ou dans data-src tant que le site ne l'a pas encore chargée
+  function adresseImage(img, wrap) {
+    if (!img) return '';
+    var src = img.currentSrc || img.getAttribute('src') || img.dataset.src || img.dataset.original || '';
+    if (!src || /^data:/.test(src)) src = img.dataset.src || img.dataset.original || '';
+    if (!src) return '';
+    // Une image cachée sans adresse réelle ne compte pas
+    if (wrap && !visible(wrap) && !img.complete) return '';
+    try { return new URL(src, location.href).href; } catch (e) { return src; }
+  }
   function remplie(c) { return !!c.objet || !!c.timer; }
   function sectionRemplie(m) { return valeurs(m).some(remplie); }
 
@@ -40,7 +50,7 @@
         atelier: atelier,
         etat: etat,
         objet: texte(carte, '[data-info="manufacture-card-name"]'),
-        image: img && (!imgWrap || visible(imgWrap)) ? (img.currentSrc || img.src || '') : '',
+        image: adresseImage(img, imgWrap),
         lv: lv,
         timer: (piedTxt.match(RE_TIMER) || [''])[0],
         recompense: nombres ? nombres[nombres.length - 1].trim() : '',
